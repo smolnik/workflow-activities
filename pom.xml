@@ -2,9 +2,14 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>net.adamsmolnik</groupId>
-	<artifactId>digest-activity</artifactId>
+	<artifactId>workflow-activities</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<dependencies>
+		<dependency>
+			<groupId>net.adamsmolnik</groupId>
+			<artifactId>common-ext-model</artifactId>
+			<version>0.0.1-SNAPSHOT</version>
+		</dependency>
 		<dependency>
 			<groupId>com.amazonaws</groupId>
 			<artifactId>aws-java-sdk</artifactId>
@@ -39,6 +44,6 @@
 				</executions>
 			</plugin>
 		</plugins>
-		<finalName>digestactivity</finalName>
+		<finalName>workflow-activities</finalName>
 	</build>
 </project>
