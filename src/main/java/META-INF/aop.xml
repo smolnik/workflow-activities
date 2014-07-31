@@ -1,0 +1,12 @@
+<aspectj>
+	<aspects>
+		<!-- declare two existing aspects to the weaver -->
+		<aspect
+			name="com.amazonaws.services.simpleworkflow.flow.aspectj.AsynchronousAspect" />
+		<aspect
+			name="com.amazonaws.services.simpleworkflow.flow.aspectj.ExponentialRetryAspect" />
+	</aspects>
+	<weaver options="-verbose">
+		<include within="net.adamsmolnik.workflow.DataProcessingWorkflowImpl" />
+	</weaver>
+</aspectj>
