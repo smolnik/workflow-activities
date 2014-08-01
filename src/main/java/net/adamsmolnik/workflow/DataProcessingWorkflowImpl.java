@@ -3,7 +3,6 @@ package net.adamsmolnik.workflow;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import net.adamsmolnik.boundary.dataimport.ImportActivityClient;
 import net.adamsmolnik.boundary.dataimport.ImportActivityClientImpl;
 import net.adamsmolnik.boundary.detection.DetectionActivityClient;
@@ -23,12 +22,6 @@ import net.adamsmolnik.model.digest.DigestResponse;
 import net.adamsmolnik.model.extraction.ExtractionRequest;
 import net.adamsmolnik.model.extraction.ExtractionResponse;
 import net.adamsmolnik.model.notification.NotificationRequest;
-import com.amazonaws.ClientConfiguration;
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.services.simpleworkflow.AmazonSimpleWorkflow;
-import com.amazonaws.services.simpleworkflow.AmazonSimpleWorkflowClient;
-import com.amazonaws.services.simpleworkflow.flow.WorkflowWorker;
 import com.amazonaws.services.simpleworkflow.flow.annotations.Asynchronous;
 import com.amazonaws.services.simpleworkflow.flow.annotations.Wait;
 import com.amazonaws.services.simpleworkflow.flow.core.Promise;
@@ -128,18 +121,6 @@ public class DataProcessingWorkflowImpl implements DataProcessingWorkflow {
         };
         addToReport(outcomeReport, "Data has been extracted into ", ao, extractionResponse);
         return extractionResponse;
-    }
-
-    public static void main(String[] args) throws Exception {
-        ClientConfiguration config = new ClientConfiguration().withSocketTimeout(70 * 1000);
-        AmazonSimpleWorkflow service = new AmazonSimpleWorkflowClient(config);
-        service.setEndpoint("https://swf.us-east-1.amazonaws.com");
-        String domain = "net.adamsmolnik";
-        String taskListToPoll = "dataProcessingWorkflow";
-        WorkflowWorker wfw = new WorkflowWorker(service, domain, taskListToPoll);
-        wfw.addWorkflowImplementationType(DataProcessingWorkflowImpl.class);
-        wfw.start();
-        TimeUnit.SECONDS.sleep(180);
     }
 
 }
