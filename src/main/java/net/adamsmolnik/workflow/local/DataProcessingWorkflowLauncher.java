@@ -18,7 +18,7 @@ public class DataProcessingWorkflowLauncher {
         AmazonSimpleWorkflow service = new AmazonSimpleWorkflowClient(new SystemCredentials(), config);
         service.setEndpoint("https://swf.us-east-1.amazonaws.com");
         String domain = "net.adamsmolnik";
-        String taskListToPoll = "dataProcessingWorkflow";
+        String taskListToPoll = "dataProcessingWorkflowTasks";
         WorkflowWorker wfw = new WorkflowWorker(service, domain, taskListToPoll);
         wfw.addWorkflowImplementationType(DataProcessingWorkflowImpl.class);
         wfw.start();

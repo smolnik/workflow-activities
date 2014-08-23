@@ -33,6 +33,8 @@ public class DataProcessingWorkflowImpl implements DataProcessingWorkflow {
 
     private static final String WF_INFO_TEMPLATE = "DataProcessingWorkflow has been %s for source objectKey %s";
 
+    private volatile String state = "Just launched";
+
     private final ImportActivityClient imAC = new ImportActivityClientImpl();
 
     private final NotificationActivityClient nAC = new NotificationActivityClientImpl();
@@ -45,15 +47,24 @@ public class DataProcessingWorkflowImpl implements DataProcessingWorkflow {
 
     @Override
     public void launch(String srcObjectKey, Set<ActionType> actions) {
+        if (actions.isEmpty()) {
+            String noActionDefinedInfo = String.format("No action defined for ?", srcObjectKey);
+            setState(noActionDefinedInfo);
+            nAC.publish(new NotificationRequest(noActionDefinedInfo));
+            return;
+        }
         nAC.publish(new NotificationRequest(String.format(WF_INFO_TEMPLATE, "launched", srcObjectKey)));
         Promise<ImportResponse> importResponse = imAC.doImport(new ImportRequest(srcObjectKey));
+        setState("Just imported", importResponse);
         Promise<OutcomeReport> outcomeReport = takeActions(actions, importResponse);
         publishCompleted(srcObjectKey, outcomeReport);
     }
 
     @Asynchronous
     private void publishCompleted(String srcObjectKey, Promise<OutcomeReport> outcomeReport) {
-        nAC.publish(new NotificationRequest(String.format(WF_INFO_TEMPLATE, "completed", srcObjectKey + " with the received outcome report: \n"
+        String completedState = "Completed";
+        setState(completedState);
+        nAC.publish(new NotificationRequest(String.format(WF_INFO_TEMPLATE, completedState, srcObjectKey + " with the received outcome report: \n"
                 + outcomeReport.get())));
     }
 
@@ -67,6 +78,7 @@ public class DataProcessingWorkflowImpl implements DataProcessingWorkflow {
         boolean doDetection = actionTypes.contains(ActionType.DETECT);
         if (doDetection || doExtraction) {
             final Promise<DetectionResponse> detectionResponse = detectionAC.detect(new DetectionRequest(objectKey));
+            setState("Just detected", detectionResponse);
             ActivityOutcome<String> ao = new ActivityOutcome<String>() {
 
                 @Override
@@ -78,11 +90,13 @@ public class DataProcessingWorkflowImpl implements DataProcessingWorkflow {
             addToReport(outcomeReport, "Data has been recognized as ", ao, detectionResponse);
             if (doExtraction) {
                 Promise<?> extractionResponse = extract(outcomeReport, objectKey, doExtraction, detectionResponse);
+                setState("Just extracted", extractionResponse);
                 actionsDone.add(extractionResponse);
             }
         }
         if (actionTypes.contains(ActionType.DIGEST)) {
             final Promise<DigestResponse> digestResponse = digestAC.digest(new DigestRequest("SHA-256", objectKey));
+            setState("The digest performed", digestResponse);
             ActivityOutcome<String> ao = new ActivityOutcome<String>() {
 
                 @Override
@@ -121,6 +135,16 @@ public class DataProcessingWorkflowImpl implements DataProcessingWorkflow {
         };
         addToReport(outcomeReport, "Data has been extracted into ", ao, extractionResponse);
         return extractionResponse;
+    }
+
+    @Asynchronous
+    private void setState(String state, Promise<?>... waitFor) {
+        this.state = state;
+    }
+
+    @Override
+    public String getState() {
+        return state;
     }
 
 }
