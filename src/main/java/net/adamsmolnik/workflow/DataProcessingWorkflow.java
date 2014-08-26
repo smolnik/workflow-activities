@@ -14,8 +14,8 @@ import com.amazonaws.services.simpleworkflow.flow.annotations.WorkflowRegistrati
 @WorkflowRegistrationOptions(defaultExecutionStartToCloseTimeoutSeconds = 3600)
 public interface DataProcessingWorkflow {
 
-    @Execute(version = "1.0.5")
-    public void launch(String srcObjectKey, Set<ActionType> operations);
+    @Execute(version = "1.0.8")
+    public void launch(String bucketName, String srcObjectKey, Set<ActionType> operations);
 
     @GetState
     public String getState();

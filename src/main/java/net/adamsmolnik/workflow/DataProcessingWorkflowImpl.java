@@ -1,7 +1,9 @@
 package net.adamsmolnik.workflow;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import net.adamsmolnik.boundary.dataimport.ImportActivityClient;
 import net.adamsmolnik.boundary.dataimport.ImportActivityClientImpl;
@@ -21,7 +23,11 @@ import net.adamsmolnik.model.digest.DigestRequest;
 import net.adamsmolnik.model.digest.DigestResponse;
 import net.adamsmolnik.model.extraction.ExtractionRequest;
 import net.adamsmolnik.model.extraction.ExtractionResponse;
+import net.adamsmolnik.model.extraction.ExtractionStatus;
 import net.adamsmolnik.model.notification.NotificationRequest;
+import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.model.CopyObjectRequest;
+import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.simpleworkflow.flow.annotations.Asynchronous;
 import com.amazonaws.services.simpleworkflow.flow.annotations.Wait;
 import com.amazonaws.services.simpleworkflow.flow.core.Promise;
@@ -45,95 +51,110 @@ public class DataProcessingWorkflowImpl implements DataProcessingWorkflow {
 
     private final ExtractionActivityClient extractionAC = new ExtractionActivityClientImpl();
 
+    private final Map<String, String> outcomeMetadata = new HashMap<>();
+
+    private final AmazonS3Client s3Client = new AmazonS3Client();
+
+    private String destObjectKey;
+
+    private String bucketName;
+
     @Override
-    public void launch(String srcObjectKey, Set<ActionType> actions) {
-        if (actions.isEmpty()) {
+    public void launch(String bucketName, String srcObjectKey, Set<ActionType> actionTypes) {
+        if (actionTypes.isEmpty()) {
             String noActionDefinedInfo = String.format("No action defined for ?", srcObjectKey);
             setState(noActionDefinedInfo);
             nAC.publish(new NotificationRequest(noActionDefinedInfo));
             return;
         }
-        nAC.publish(new NotificationRequest(String.format(WF_INFO_TEMPLATE, "launched", srcObjectKey)));
+        this.bucketName = bucketName;
+        notifyConditionallyOnStart(srcObjectKey, actionTypes);
         Promise<ImportResponse> importResponse = imAC.doImport(new ImportRequest(srcObjectKey));
-        setState("Just imported", importResponse);
-        Promise<OutcomeReport> outcomeReport = takeActions(actions, importResponse);
-        publishCompleted(srcObjectKey, outcomeReport);
+        processImportResponse(importResponse);
+        Promise<Void> waitFor = takeActions(actionTypes, importResponse);
+        finish(srcObjectKey, actionTypes, waitFor);
     }
 
     @Asynchronous
-    private void publishCompleted(String srcObjectKey, Promise<OutcomeReport> outcomeReport) {
-        String completedState = "Completed";
-        setState(completedState);
-        nAC.publish(new NotificationRequest(String.format(WF_INFO_TEMPLATE, completedState, srcObjectKey + " with the received outcome report: \n"
-                + outcomeReport.get())));
-    }
-
-    @Asynchronous
-    private Promise<OutcomeReport> takeActions(Set<ActionType> actionTypes, Promise<ImportResponse> importResponse) {
-        OutcomeReport outcomeReport = new OutcomeReport();
+    private Promise<Void> takeActions(Set<ActionType> actionTypes, Promise<ImportResponse> importResponse) {
         String objectKey = importResponse.get().importedObjectKey;
-        outcomeReport.add("Data has been imported into internal folder " + objectKey);
-        List<Promise<?>> actionsDone = new ArrayList<>();
+        List<Promise<?>> actionsToBeWaitedFor = new ArrayList<>();
         boolean doExtraction = actionTypes.contains(ActionType.EXTRACT);
         boolean doDetection = actionTypes.contains(ActionType.DETECT);
         if (doDetection || doExtraction) {
-            final Promise<DetectionResponse> detectionResponse = detectionAC.detect(new DetectionRequest(objectKey));
-            setState("Just detected", detectionResponse);
-            ActivityOutcome<String> ao = new ActivityOutcome<String>() {
-
-                @Override
-                public String getOutcome() {
-                    return detectionResponse.get().subType;
-                }
-            };
-            actionsDone.add(detectionResponse);
-            addToReport(outcomeReport, "Data has been recognized as ", ao, detectionResponse);
+            Promise<DetectionResponse> detectionResponse = detectionAC.detect(new DetectionRequest(objectKey));
+            processDetectionResponse(detectionResponse);
+            actionsToBeWaitedFor.add(detectionResponse);
             if (doExtraction) {
-                Promise<?> extractionResponse = extract(outcomeReport, objectKey, doExtraction, detectionResponse);
-                setState("Just extracted", extractionResponse);
-                actionsDone.add(extractionResponse);
+                Promise<ExtractionResponse> extractionResponse = extract(objectKey, doExtraction, detectionResponse);
+                processExtractionResponse(extractionResponse);
+                actionsToBeWaitedFor.add(extractionResponse);
             }
         }
         if (actionTypes.contains(ActionType.DIGEST)) {
-            final Promise<DigestResponse> digestResponse = digestAC.digest(new DigestRequest("SHA-256", objectKey));
-            setState("The digest performed", digestResponse);
-            ActivityOutcome<String> ao = new ActivityOutcome<String>() {
-
-                @Override
-                public String getOutcome() {
-                    return digestResponse.get().digest;
-                }
-            };
-            actionsDone.add(digestResponse);
-            addToReport(outcomeReport, "Digest calculated is ", ao, digestResponse);
+            String algorithm = "SHA-256";
+            Promise<DigestResponse> digestResponse = digestAC.digest(new DigestRequest(algorithm, objectKey));
+            processDigestResponse(algorithm, digestResponse);
+            actionsToBeWaitedFor.add(digestResponse);
         }
+        return waitFor(actionsToBeWaitedFor);
+    }
 
-        return waitFor(actionsDone, outcomeReport);
+    private void notifyConditionallyOnStart(String srcObjectKey, Set<ActionType> actions) {
+        if (actions.contains(ActionType.NOTIFY_ON_START)) {
+            nAC.publish(new NotificationRequest(String.format(WF_INFO_TEMPLATE, "launched", srcObjectKey)));
+        }
     }
 
     @Asynchronous
-    private Promise<OutcomeReport> waitFor(@Wait List<Promise<?>> actionsDone, OutcomeReport outcomeReport) {
-        return Promise.asPromise(outcomeReport);
+    private void processImportResponse(Promise<ImportResponse> importResponse) {
+        this.destObjectKey = importResponse.get().importedObjectKey;
+        setState("Just imported");
     }
 
     @Asynchronous
-    private void addToReport(OutcomeReport outcomeReport, String message, ActivityOutcome<?> ao, Promise<?> waitFor) {
-        outcomeReport.add(message + ao.getOutcome());
+    private void processDetectionResponse(Promise<DetectionResponse> detectionResponse) {
+        DetectionResponse dr = detectionResponse.get();
+        setState("Just detected");
+        setOutcomeMetadata("mediaType", dr.type + "/" + dr.subType);
     }
 
     @Asynchronous
-    private Promise<ExtractionResponse> extract(OutcomeReport outcomeReport, String objectKey, boolean doExtraction,
-            Promise<DetectionResponse> detectionResponse) {
-        String subType = detectionResponse.get().subType;
-        final Promise<ExtractionResponse> extractionResponse = extractionAC.extract(new ExtractionRequest(objectKey, subType));
-        ActivityOutcome<String> ao = new ActivityOutcome<String>() {
+    private void processDigestResponse(String algorithm, Promise<DigestResponse> digestResponse) {
+        setState("The digest performed");
+        setOutcomeMetadata("digest-" + algorithm, digestResponse.get().digest);
+    }
 
-            @Override
-            public String getOutcome() {
-                return extractionResponse.get().objectKeys.toString();
-            }
-        };
-        addToReport(outcomeReport, "Data has been extracted into ", ao, extractionResponse);
+    @Asynchronous
+    private void processExtractionResponse(Promise<ExtractionResponse> extractionResponse) {
+        ExtractionResponse er = extractionResponse.get();
+        if (er.status == ExtractionStatus.NOT_ELIGIBLE) {
+            return;
+        }
+        setState("Just extracted", extractionResponse);
+        setOutcomeMetadata("extractionInfoObjectKey", er.extractionInfoObjectKey);
+    }
+
+    @Asynchronous
+    private void finish(String srcObjectKey, Set<ActionType> actions, Promise<?> waitFor) {
+        persistOutcomeMetadata();
+        String completedState = "Completed";
+        setState(completedState);
+        if (actions.contains(ActionType.NOTIFY_ON_FINISH)) {
+            nAC.publish(new NotificationRequest(String.format(WF_INFO_TEMPLATE, completedState, srcObjectKey
+                    + " with the received outcome metadata: \n" + outcomeMetadata.toString())));
+        }
+    }
+
+    @Asynchronous
+    private Promise<Void> waitFor(@Wait List<Promise<?>> actionsDone) {
+        return Promise.Void();
+    }
+
+    @Asynchronous
+    private Promise<ExtractionResponse> extract(String objectKey, boolean doExtraction, Promise<DetectionResponse> detectionResponse) {
+        final Promise<ExtractionResponse> extractionResponse = extractionAC
+                .extract(new ExtractionRequest(objectKey, detectionResponse.get().subType));
         return extractionResponse;
     }
 
@@ -145,6 +166,18 @@ public class DataProcessingWorkflowImpl implements DataProcessingWorkflow {
     @Override
     public String getState() {
         return state;
+    }
+
+    private void setOutcomeMetadata(String key, String value) {
+        outcomeMetadata.put(key, value);
+    }
+
+    private void persistOutcomeMetadata() {
+        CopyObjectRequest cor = new CopyObjectRequest(bucketName, destObjectKey, bucketName, destObjectKey);
+        ObjectMetadata omd = s3Client.getObjectMetadata(bucketName, destObjectKey);
+        omd.setUserMetadata(outcomeMetadata);
+        cor.setNewObjectMetadata(omd);
+        s3Client.copyObject(cor);
     }
 
 }

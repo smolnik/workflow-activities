@@ -6,6 +6,6 @@ package net.adamsmolnik.workflow;
  */
 public enum ActionType {
 
-    IMPORT, DETECT, DIGEST, EXTRACT;
+    NOTIFY_ON_START, IMPORT, DETECT, DIGEST, EXTRACT, NOTIFY_ON_FINISH;
 
 }

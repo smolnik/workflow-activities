@@ -21,7 +21,8 @@ public class WorkflowClient {
     public static void main(String[] args) throws Exception {
         SystemCredentials sc = new SystemCredentials();
         AmazonS3Client s3Client = new AmazonS3Client(sc);
-        s3Client.putObject("net.adamsmolnik.warsjawa", "myfolder/awsugpl.zip", new File("C:/temp/awsugpl.zip"));
+        String bucketName = "net.adamsmolnik.warsjawa";
+        s3Client.putObject(bucketName, "myfolder/awsugpl.zip", new File("C:/temp/awsugpl.zip"));
 
         ClientConfiguration config = new ClientConfiguration().withSocketTimeout(70 * 1000);
         AmazonSimpleWorkflow service = new AmazonSimpleWorkflowClient(sc, config);
@@ -32,7 +33,7 @@ public class WorkflowClient {
         actionTypes.add(ActionType.IMPORT);
         actionTypes.add(ActionType.DIGEST);
         actionTypes.add(ActionType.EXTRACT);
-        client.launch("myfolder/awsugpl.zip", actionTypes);
+        client.launch(bucketName, "myfolder/awsugpl.zip", actionTypes);
         TimeUnit.SECONDS.sleep(300);
     }
 
