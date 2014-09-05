@@ -15,7 +15,7 @@ public class DataProcessingWorkflowLauncher {
 
     public static void main(String[] args) throws Exception {
         ClientConfiguration config = new ClientConfiguration().withSocketTimeout(70 * 1000);
-        AmazonSimpleWorkflow service = new AmazonSimpleWorkflowClient(new SystemCredentials(), config);
+        AmazonSimpleWorkflow service = new AmazonSimpleWorkflowClient(config);
         service.setEndpoint("https://swf.us-east-1.amazonaws.com");
         String domain = "net.adamsmolnik";
         String taskListToPoll = "dataProcessingWorkflowTasks";

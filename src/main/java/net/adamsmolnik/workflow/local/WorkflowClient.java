@@ -19,13 +19,12 @@ import com.amazonaws.services.simpleworkflow.AmazonSimpleWorkflowClient;
 public class WorkflowClient {
 
     public static void main(String[] args) throws Exception {
-        SystemCredentials sc = new SystemCredentials();
-        AmazonS3Client s3Client = new AmazonS3Client(sc);
+        AmazonS3Client s3Client = new AmazonS3Client();
         String bucketName = "net.adamsmolnik.warsjawa";
         s3Client.putObject(bucketName, "myfolder/awsugpl.zip", new File("C:/temp/awsugpl.zip"));
 
         ClientConfiguration config = new ClientConfiguration().withSocketTimeout(70 * 1000);
-        AmazonSimpleWorkflow service = new AmazonSimpleWorkflowClient(sc, config);
+        AmazonSimpleWorkflow service = new AmazonSimpleWorkflowClient(config);
         service.setEndpoint("https://swf.us-east-1.amazonaws.com");
         String domain = "net.adamsmolnik";
         DataProcessingWorkflowClientExternal client = new DataProcessingWorkflowClientExternalFactoryImpl(service, domain).getClient();
