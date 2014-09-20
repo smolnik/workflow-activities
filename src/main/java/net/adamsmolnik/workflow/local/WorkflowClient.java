@@ -20,19 +20,22 @@ public class WorkflowClient {
 
     public static void main(String[] args) throws Exception {
         AmazonS3Client s3Client = new AmazonS3Client();
-        String bucketName = "net.adamsmolnik.warsjawa";
-        s3Client.putObject(bucketName, "myfolder/awsugpl.zip", new File("C:/temp/awsugpl.zip"));
+        String bucketName = "student100";
+        String srcObjectKey = "external/awsugpl.zip";
+        s3Client.putObject(bucketName, srcObjectKey, new File("C:/temp/awsugpl.zip"));
 
         ClientConfiguration config = new ClientConfiguration().withSocketTimeout(70 * 1000);
         AmazonSimpleWorkflow service = new AmazonSimpleWorkflowClient(config);
         service.setEndpoint("https://swf.us-east-1.amazonaws.com");
-        String domain = "net.adamsmolnik";
+        String domain = "student100";
         DataProcessingWorkflowClientExternal client = new DataProcessingWorkflowClientExternalFactoryImpl(service, domain).getClient();
         Set<ActionType> actionTypes = new HashSet<>();
         actionTypes.add(ActionType.IMPORT);
         actionTypes.add(ActionType.DIGEST);
         actionTypes.add(ActionType.EXTRACT);
-        client.launch(bucketName, "myfolder/awsugpl.zip", actionTypes);
+        client.launch(bucketName, srcObjectKey, actionTypes);
+        TimeUnit.SECONDS.sleep(20);
+        System.out.println("state = " + client.getState());
         TimeUnit.SECONDS.sleep(300);
     }
 
